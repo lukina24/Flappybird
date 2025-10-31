@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Bird - Deluxe</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #87CEEB;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #87CEEB, #70c5ce);
+        }
+        canvas {
+            border: 4px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            background: #70c5ce;
+        }
+
+        /* Menü */
+        #menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            text-align: center;
+            width: 320px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .bird-selection {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+        .bird-option {
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 10px;
+            transition: all 0.3s;
+            text-align: center;
+            width: 80px;
+        }
+        .bird-option:hover {
+            transform: scale(1.1);
+            background: #f1f1f1;
+        }
+        .bird-option.selected {
+            background: #3498db;
+            color: white;
+            transform: scale(1.15);
+        }
+        .bird-preview {
+            width: 50px;
+            height: 40px;
+            margin: 0 auto 5px;
+            position: relative;
+        }
+        .bird-name {
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 18px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            background: #c0392b;
+            transform: translateY(-2px);
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 25px 40px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+        }
+        #game-over h1 { color: #e74c3c; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <!-- Menü -->
+    <div id="menu">
+        <h1>Flappy Bird</h1>
+        <p>Wähle deinen Vogel:</p>
+        <div class="bird-selection">
+            <div class="bird-option" data-bird="yellow" onclick="selectBird(this, 'yellow', 'Classic')">
+                <div class="bird-preview" style="background: #f1c40f;"></div>
+                <div class="bird-name">Classic</div>
+            </div>
+            <div class="bird-option" data-bird="red" onclick="selectBird(this, 'red', 'Fire')">
+                <div class="bird-preview" style="background: #e74c3c;"></div>
+                <div class="bird-name">Fire</div>
+            </div>
+            <div class="bird-option" data-bird="blue" onclick="selectBird(this, 'blue', 'Sky')">
+                <div class="bird-preview" style="background: #3498db;"></div>
+                <div class="bird-name">Sky</div>
+            </div>
+        </div>
+        <button id="startBtn" onclick="startGame()" disabled>Starte Spiel</button>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="gameCanvas" width="320" height="480"></canvas>
+
+    <!-- Game Over -->
+    <div id="game-over">
+        <h1>Game Over!</h1>
+        <p>Dein Score: <strong id="final-score">0</strong></p>
+        <p>Dein Vogel: <span id="bird-name">?</span></p>
+        <button onclick="showMenu()">Zum Menü</button>
+        <button onclick="restartGame()">Nochmal</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const menu = document.getElementById('menu');
+        const gameOver = document.getElementById('game-over');
+        const finalScoreEl = document.getElementById('final-score');
+        const birdNameEl = document.getElementById('bird-name');
+        const startBtn = document.getElementById('startBtn');
+
+        // Vogel-Optionen
+        const birds = {
+            yellow: { color: '#f1c40f', eye: '#000', beak: '#e67e22', name: 'Classic' },
+            red:    { color: '#e74c3c', eye: '#fff', beak: '#c0392b', name: 'Fire' },
+            blue:   { color: '#3498db', eye: '#fff', beak: '#2980b9', name: 'Sky' }
+        };
+
+        let selectedBird = 'yellow';
+        let currentBird = birds[selectedBird];
+        let bird = { x: 60, y: canvas.height / 2, width: 34, height: 24, velocity: 0 };
+        const gravity = 0.42;
+        let pipes = [];
+        let score = 0;
+        let gameRunning = false;
+
+        // Vogel auswählen
+        function selectBird(element, birdKey, name) {
+            document.querySelectorAll('.bird-option').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            selectedBird = birdKey;
+            currentBird = birds[birdKey];
+            startBtn.disabled = false;
+            startBtn.style.background = currentBird.color;
+        }
+
+        function drawBird() {
+            const b = bird;
+            // Körper
+            ctx.fillStyle = currentBird.color;
+            ctx.fillRect(b.x, b.y, b.width, b.height);
+            // Auge
+            ctx.fillStyle = currentBird.eye;
+            ctx.fillRect(b.x + 24, b.y + 8, 6, 6);
+            // Schnabel
+            ctx.fillStyle = currentBird.beak;
+            ctx.fillRect(b.x + 32, b.y + 14, 8, 6);
+        }
+
+        function createPipe() {
+            if (!gameRunning) return;
+            const gap = 160;
+            const min = 80, max = canvas.height - gap - 80;
+            const top = Math.floor(Math.random() * (max - min)) + min;
+
+            pipes.push({
+                x: canvas.width,
+                top: top,
+                bottom: canvas.height - top - gap,
+                width: 52,
+                passed: false
+            });
+
+            setTimeout(createPipe, 2100);
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            bird.velocity += gravity;
+            bird.y += bird.velocity;
+
+            if (bird.y + bird.height > canvas.height || bird.y < 0) endGame();
+
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                const p = pipes[i];
+                p.x -= 2;
+
+                if (!p.passed && p.x + p.width < bird.x) {
+                    score++;
+                    p.passed = true;
+                }
+
+                if (
+                    bird.x < p.x + p.width &&
+                    bird.x + bird.width > p.x &&
+                    (bird.y < p.top || bird.y + bird.height > canvas.height - p.bottom)
+                ) {
+                    endGame();
+                }
+
+                if (p.x + p.width < 0) pipes.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Himmel
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#87CEEB');
+            grad.addColorStop(1, '#70c5ce');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Röhren
+            ctx.fillStyle = '#27ae60';
+            pipes.forEach(p => {
+                ctx.fillRect(p.x, 0, p.width, p.top);
+                ctx.fillRect(p.x, canvas.height - p.bottom, p.width, p.bottom);
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillRect(p.x - 4, p.top - 30, p.width + 8, 30);
+                ctx.fillRect(p.x - 4, canvas.height - p.bottom, p.width + 8, 30);
+                ctx.fillStyle = '#27ae60';
+            });
+
+            drawBird();
+
+            // Score
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.font = 'bold 30px Arial';
+            ctx.fillText(score, 12, 42);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(score, 10, 40);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function flap() {
+            if (gameRunning) bird.velocity = -9;
+        }
+
+        function startGame() {
+            menu.style.display = 'none';
+            bird.y = canvas.height / 2;
+            bird.velocity = 0;
+            pipes = [];
+            score = 0;
+            gameRunning = true;
+            gameOver.style.display = 'none';
+            setTimeout(createPipe, 1200);
+        }
+
+        function endGame() {
+            gameRunning = false;
+            finalScoreEl.textContent = score;
+            birdNameEl.textContent = currentBird.name;
+            gameOver.style.display = 'block';
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        function showMenu() {
+            gameOver.style.display = 'none';
+            menu.style.display = 'block';
+            startBtn.disabled = true;
+            startBtn.style.background = '#e74c3c';
+            document.querySelectorAll('.bird-option').forEach(el => el.classList.remove('selected'));
+        }
+
+        // Steuerung
+        canvas.addEventListener('click', flap);
+        document.addEventListener('keydown', e => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (!gameRunning && menu.style.display !== 'none') {
+                    if (!startBtn.disabled) startGame();
+                } else {
+                    flap();
+                }
+            }
+        });
+
+        // Start
+        gameLoop();
+    </script>
+</body>
+</html>
